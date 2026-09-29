@@ -1,27 +1,53 @@
 name: CI workflow
-on: [push, pull_request]
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Optional tap test file(s) to run instead of the full suite'
+        required: false
+        default: ''
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         node-version: [10.x, 12.x, 14.x]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v1
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
     - name: Install Dependencies
       run: npm install --ignore-scripts
     - name: Test
-      run: npm test
+      run: |
+        if [ -n "${{ inputs.test-filter }}" ]; then
+          npx tap ${{ inputs.test-filter }}
+        else
+          npm test
+        fi
 
-  automerge:
+  pack:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: fastify/github-action-merge-dependabot@v1
-        if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request' }}
-        with:
-          github-token: ${{secrets.github_token}}
+    - uses: actions/checkout@v4
+    - name: Use Node.js 14.15.4
+      uses: actions/setup-node@v4
+      with:
+        node-version: 14.15.4
+    - name: Pack
+      run: |
+        npm i -g npm@6.14.11
+        npm pack
+        mkdir -p dist
+        mv fastify-proxy-addr-3.0.0.tgz dist/proxy-addr-3.0.0.tgz
+    - uses: actions/upload-artifact@v4
+      with:
+        name: proxy-addr-tgz
+        path: dist/proxy-addr-3.0.0.tgz
+        if-no-files-found: error
